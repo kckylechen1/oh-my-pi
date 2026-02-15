@@ -40,13 +40,14 @@ import {
 	AgentProtocolHandler,
 	ArtifactProtocolHandler,
 	InternalUrlRouter,
+	MemoryProtocolHandler,
 	PlanProtocolHandler,
 	RuleProtocolHandler,
 	SkillProtocolHandler,
 } from "./internal-urls";
 import { disposeAllKernelSessions } from "./ipy/executor";
 import { discoverAndLoadMCPTools, type MCPManager, type MCPToolsLoadResult } from "./mcp";
-import { buildMemoryToolDeveloperInstructions, startMemoryStartupTask } from "./memories";
+import { buildMemoryToolDeveloperInstructions, getMemoryRootForCwd, startMemoryStartupTask } from "./memories";
 import { AgentSession } from "./session/agent-session";
 import { AuthStorage } from "./session/auth-storage";
 import { convertToLlm } from "./session/messages";
@@ -765,6 +766,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	internalRouter.register(
 		new RuleProtocolHandler({
 			getRules: () => rulebookRules,
+		}),
+	);
+	internalRouter.register(
+		new MemoryProtocolHandler({
+			getMemoryRoot: (memoryCwd: string) => getMemoryRootForCwd(agentDir, memoryCwd),
+			getCwd: () => cwd,
 		}),
 	);
 	toolSession.internalRouter = internalRouter;

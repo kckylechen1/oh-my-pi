@@ -168,7 +168,6 @@ export async function buildMemoryToolDeveloperInstructions(
 	if (!truncated.trim()) return undefined;
 
 	return renderPromptTemplate(readPathTemplate, {
-		base_path: memoryRoot,
 		memory_summary: truncated,
 	});
 }
@@ -575,7 +574,7 @@ async function runStage1Job(options: {
 		const budgetTokens = Math.floor(modelMaxTokens * config.rolloutPayloadPercent);
 		const truncatedItems = truncateByApproxTokens(serializedItems, budgetTokens);
 		const inputPrompt = renderPromptTemplate(stageOneInputTemplate, {
-			rollout_path: claim.rolloutPath,
+			rollout_path_encoded: encodeURIComponent(claim.rolloutPath),
 			cwd: claim.cwd,
 			response_items_json: truncatedItems,
 		});
@@ -1079,6 +1078,14 @@ function loadMemoryConfig(settings: Settings): MemoryRuntimeConfig {
 
 function getMemoryRoot(agentDir: string, cwd: string): string {
 	return path.join(agentDir, "memories", encodeProjectPath(cwd));
+}
+
+/**
+ * Get the memory root directory for a given working directory.
+ * @internal Exported for use by MemoryProtocolHandler
+ */
+export function getMemoryRootForCwd(agentDir: string, cwd: string): string {
+	return getMemoryRoot(agentDir, cwd);
 }
 
 function encodeProjectPath(cwd: string): string {

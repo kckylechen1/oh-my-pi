@@ -44,7 +44,9 @@ function validateRelativePath(relativePath: string): void {
 	}
 
 	const normalized = path.normalize(relativePath);
-	if (normalized.startsWith("..") || normalized.includes("/../") || normalized.includes("/..")) {
+	// Check for .. in path segments (platform-independent)
+	const segments = normalized.split(path.sep);
+	if (segments.some(seg => seg === "..")) {
 		throw new Error("Path traversal (..) is not allowed in memory:// URLs");
 	}
 }
@@ -85,8 +87,9 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 			const targetPath = path.join(memoryRoot, relativePath);
 
 			// Verify the resolved path is still within memoryRoot
-			const resolvedPath = path.resolve(targetPath);
-			const resolvedRoot = path.resolve(memoryRoot);
+			// Use lowercase comparison for case-insensitive filesystems
+			const resolvedPath = path.resolve(targetPath).toLowerCase();
+			const resolvedRoot = path.resolve(memoryRoot).toLowerCase();
 			if (!resolvedPath.startsWith(resolvedRoot + path.sep) && resolvedPath !== resolvedRoot) {
 				throw new Error("Path traversal is not allowed");
 			}

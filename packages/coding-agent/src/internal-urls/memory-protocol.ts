@@ -90,7 +90,8 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 			// Use lowercase comparison for case-insensitive filesystems
 			const resolvedPath = path.resolve(targetPath).toLowerCase();
 			const resolvedRoot = path.resolve(memoryRoot).toLowerCase();
-			if (!resolvedPath.startsWith(resolvedRoot + path.sep) && resolvedPath !== resolvedRoot) {
+			// Check: path equals root OR path is within root (starts with root + separator)
+			if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(resolvedRoot + path.sep)) {
 				throw new Error("Path traversal is not allowed");
 			}
 

@@ -4,13 +4,15 @@
  * Resolves memory paths to their content without exposing raw filesystem paths to the agent.
  *
  * URL forms:
- * - memory://root - Memory root directory path
+ * - memory://root - Memory root directory (virtual info only)
  * - memory://root/memory_summary.md - Specific memory file
  * - memory://root/MEMORY.md - Main memory file
  * - memory://root/skills/<name>/SKILL.md - Skill memory file
- * - memory://rollout/<id> - Rollout file path
+ * - memory://thread/<id> - Thread/rollout file by opaque ID
  */
 import * as path from "node:path";
+import { getAgentDbPath } from "@oh-my-pi/pi-utils/dirs";
+import { getThreadById, openMemoryDb, closeMemoryDb } from "../../memories/storage";
 import type { InternalResource, InternalUrl, ProtocolHandler } from "./types";
 
 export interface MemoryProtocolOptions {
@@ -23,6 +25,10 @@ export interface MemoryProtocolOptions {
 	 * Returns the current working directory.
 	 */
 	getCwd: () => string;
+	/**
+	 * Returns the agent directory.
+	 */
+	getAgentDir: () => string;
 }
 
 /**
@@ -71,13 +77,12 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 			const urlPath = url.pathname;
 
 			if (!urlPath || urlPath === "/" || urlPath === "") {
-				// Just the root - return an informational message
+				// Just the root - return virtual info without exposing filesystem path
 				return {
 					url: url.href,
-					content: `Memory root directory: ${memoryRoot}`,
+					content: "Memory root directory for current project",
 					contentType: "text/plain",
-					sourcePath: memoryRoot,
-					notes: ["Memory root directory path"],
+					notes: ["Virtual memory root reference"],
 				};
 			}
 
@@ -114,39 +119,49 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 			};
 		}
 
-		if (type === "rollout") {
-			// memory://rollout/<path>
-			// Rollout paths reference agent conversation history files
-			const rolloutPath = decodeURIComponent(url.pathname.slice(1));
+		if (type === "thread") {
+			// memory://thread/<threadId>
+			// Resolve opaque thread ID to rollout file server-side
+			const threadId = decodeURIComponent(url.pathname.slice(1));
 
-			if (!rolloutPath) {
-				throw new Error("memory://rollout requires a rollout path: memory://rollout/<path>");
+			if (!threadId) {
+				throw new Error("memory://thread requires a thread ID: memory://thread/<id>");
 			}
 
-			// Validate that it's a reasonable path
-			if (!path.isAbsolute(rolloutPath)) {
-				throw new Error("Rollout paths must be absolute");
+			// Look up thread in database
+			const agentDir = this.options.getAgentDir();
+			const dbPath = getAgentDbPath(agentDir);
+			const db = openMemoryDb(dbPath);
+			let thread;
+			try {
+				thread = getThreadById(db, threadId);
+			} finally {
+				closeMemoryDb(db);
 			}
 
-			// Read the file
-			const file = Bun.file(rolloutPath);
+			if (!thread) {
+				throw new Error(`Thread not found: ${threadId}`);
+			}
+
+			// Read the rollout file
+			const file = Bun.file(thread.rolloutPath);
 			if (!(await file.exists())) {
-				throw new Error(`Rollout file not found: ${rolloutPath}`);
+				throw new Error(`Rollout file not found for thread: ${threadId}`);
 			}
 
 			const content = await file.text();
-			const contentType = getContentType(rolloutPath);
+			const contentType = getContentType(thread.rolloutPath);
 
 			return {
 				url: url.href,
 				content,
 				contentType,
 				size: Buffer.byteLength(content, "utf-8"),
-				sourcePath: rolloutPath,
-				notes: [],
+				sourcePath: thread.rolloutPath,
+				notes: [`Thread ID: ${threadId}`],
 			};
 		}
 
-		throw new Error(`Unknown memory type: ${type}\nSupported: root, rollout`);
+		throw new Error(`Unknown memory type: ${type}\nSupported: root, thread`);
 	}
 }

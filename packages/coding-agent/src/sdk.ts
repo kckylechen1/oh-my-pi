@@ -772,6 +772,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		new MemoryProtocolHandler({
 			getMemoryRoot: (memoryCwd: string) => getMemoryRootForCwd(agentDir, memoryCwd),
 			getCwd: () => cwd,
+			getAgentDir: () => agentDir,
 		}),
 	);
 	toolSession.internalRouter = internalRouter;

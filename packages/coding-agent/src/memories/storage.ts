@@ -561,3 +561,30 @@ WHERE kind = ? AND job_key = ? AND status = 'running'
 		.run(nowSec, nowSec + retryDelaySeconds, reason, GLOBAL_KIND, GLOBAL_KEY, nowSec);
 	return Number(result.changes ?? 0) > 0;
 }
+
+/**
+ * Get thread information by thread ID.
+ */
+export function getThreadById(db: Database, threadId: string): MemoryThread | null {
+	const row = db.prepare("SELECT id, updated_at, rollout_path, cwd, source_kind FROM threads WHERE id = ?").get(
+		threadId,
+	) as
+		| {
+				id: string;
+				updated_at: number;
+				rollout_path: string;
+				cwd: string;
+				source_kind: string;
+		  }
+		| undefined;
+
+	if (!row) return null;
+
+	return {
+		id: row.id,
+		updatedAt: row.updated_at,
+		rolloutPath: row.rollout_path,
+		cwd: row.cwd,
+		sourceKind: row.source_kind,
+	};
+}

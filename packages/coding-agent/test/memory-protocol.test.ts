@@ -4,7 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { InternalUrlRouter } from "@oh-my-pi/pi-coding-agent/internal-urls";
 import { MemoryProtocolHandler } from "@oh-my-pi/pi-coding-agent/internal-urls/memory-protocol";
+import { openMemoryDb, closeMemoryDb, upsertThreads, type MemoryThread } from "@oh-my-pi/pi-coding-agent/memories/storage";
 import { Snowflake } from "@oh-my-pi/pi-utils";
+import { getAgentDbPath } from "@oh-my-pi/pi-utils/dirs";
 
 const createdDirs = new Set<string>();
 
@@ -24,18 +26,22 @@ afterEach(async () => {
 
 describe("MemoryProtocolHandler", () => {
 	let testDir: string;
+	let agentDir: string;
 	let memoryRoot: string;
 	let handler: MemoryProtocolHandler;
 	let router: InternalUrlRouter;
 
 	beforeEach(async () => {
 		testDir = await makeTempDir("memory-protocol-test");
+		agentDir = path.join(testDir, "agent");
 		memoryRoot = path.join(testDir, "memories", "test-cwd");
 		await fs.mkdir(memoryRoot, { recursive: true });
+		await fs.mkdir(agentDir, { recursive: true });
 
 		handler = new MemoryProtocolHandler({
 			getMemoryRoot: () => memoryRoot,
 			getCwd: () => "/test/cwd",
+			getAgentDir: () => agentDir,
 		});
 
 		router = new InternalUrlRouter();
@@ -48,16 +54,18 @@ describe("MemoryProtocolHandler", () => {
 
 	test("router can handle memory:// URLs", () => {
 		expect(router.canHandle("memory://root")).toBe(true);
-		expect(router.canHandle("memory://rollout/path")).toBe(true);
+		expect(router.canHandle("memory://thread/id")).toBe(true);
 		expect(router.canHandle("https://example.com")).toBe(false);
 	});
 
-	test("memory://root returns info about memory root", async () => {
+	test("memory://root returns virtual info without exposing filesystem path", async () => {
 		const result = await router.resolve("memory://root");
 		expect(result.url).toBe("memory://root");
 		expect(result.content).toContain("Memory root directory");
+		expect(result.content).not.toContain(memoryRoot); // Should NOT expose actual path
+		expect(result.content).not.toContain(testDir); // Should NOT expose actual path
 		expect(result.contentType).toBe("text/plain");
-		expect(result.sourcePath).toBe(memoryRoot);
+		expect(result.sourcePath).toBeUndefined(); // Should NOT have sourcePath
 	});
 
 	test("memory://root/memory_summary.md reads file", async () => {
@@ -104,25 +112,41 @@ describe("MemoryProtocolHandler", () => {
 		await expect(router.resolve("memory://root//etc/passwd")).rejects.toThrow(/traversal|not allowed/);
 	});
 
-	test("memory://rollout/<path> reads rollout file", async () => {
+	test("memory://thread/<id> reads rollout file by opaque ID", async () => {
 		const rolloutPath = path.join(testDir, "rollout.jsonl");
 		await fs.writeFile(rolloutPath, '{"test":"data"}');
 
-		const encodedPath = encodeURIComponent(rolloutPath);
-		const result = await router.resolve(`memory://rollout/${encodedPath}`);
+		// Insert thread into database
+		const dbPath = getAgentDbPath(agentDir);
+		const db = openMemoryDb(dbPath);
+		const threadId = "test-thread-123";
+		try {
+			const thread: MemoryThread = {
+				id: threadId,
+				updatedAt: Date.now(),
+				rolloutPath,
+				cwd: "/test/cwd",
+				sourceKind: "cli",
+			};
+			upsertThreads(db, [thread]);
+		} finally {
+			closeMemoryDb(db);
+		}
+
+		// Resolve using opaque thread ID
+		const result = await router.resolve(`memory://thread/${threadId}`);
 		expect(result.content).toBe('{"test":"data"}');
 		expect(result.contentType).toBe("text/plain");
 		expect(result.sourcePath).toBe(rolloutPath);
+		expect(result.notes).toEqual([`Thread ID: ${threadId}`]);
 	});
 
-	test("memory://rollout requires absolute path", async () => {
-		await expect(router.resolve("memory://rollout/relative/path.jsonl")).rejects.toThrow(/absolute/);
+	test("memory://thread with non-existent thread throws error", async () => {
+		await expect(router.resolve("memory://thread/nonexistent-id")).rejects.toThrow(/not found/);
 	});
 
-	test("memory://rollout with non-existent file throws error", async () => {
-		const nonExistentPath = path.join(testDir, "nonexistent.jsonl");
-		const encodedPath = encodeURIComponent(nonExistentPath);
-		await expect(router.resolve(`memory://rollout/${encodedPath}`)).rejects.toThrow(/not found/);
+	test("memory://thread requires thread ID", async () => {
+		await expect(router.resolve("memory://thread/")).rejects.toThrow(/requires a thread ID/);
 	});
 
 	test("memory:// with unknown type throws error", async () => {

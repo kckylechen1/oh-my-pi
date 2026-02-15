@@ -1,4 +1,4 @@
-rollout_path: memory://rollout/{{rollout_path_encoded}}
+thread_id: {{thread_id}}
 cwd: {{cwd}}
 
 Persistable response items (JSON):

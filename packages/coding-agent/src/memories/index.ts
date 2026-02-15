@@ -574,7 +574,7 @@ async function runStage1Job(options: {
 		const budgetTokens = Math.floor(modelMaxTokens * config.rolloutPayloadPercent);
 		const truncatedItems = truncateByApproxTokens(serializedItems, budgetTokens);
 		const inputPrompt = renderPromptTemplate(stageOneInputTemplate, {
-			rollout_path_encoded: encodeURIComponent(claim.rolloutPath),
+			thread_id: claim.threadId,
 			cwd: claim.cwd,
 			response_items_json: truncatedItems,
 		});

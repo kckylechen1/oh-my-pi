@@ -706,7 +706,6 @@ async function runConsolidationModel(options: { memoryRoot: string; model: Model
 	const rawMemories = await Bun.file(path.join(memoryRoot, "raw_memories.md")).text();
 	const rolloutSummaries = await readRolloutSummaries(memoryRoot);
 	const input = renderPromptTemplate(consolidationTemplate, {
-		memory_root: memoryRoot,
 		raw_memories: truncateByApproxTokens(rawMemories, 20_000),
 		rollout_summaries: truncateByApproxTokens(rolloutSummaries, 12_000),
 	});

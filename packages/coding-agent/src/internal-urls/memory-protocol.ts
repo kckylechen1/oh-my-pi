@@ -116,8 +116,7 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 
 		if (type === "rollout") {
 			// memory://rollout/<path>
-			// For rollout paths, we return an informational message since rollout paths
-			// are typically used in stage 1 processing and not directly accessible
+			// Rollout paths reference agent conversation history files
 			const rolloutPath = decodeURIComponent(url.pathname.slice(1));
 
 			if (!rolloutPath) {

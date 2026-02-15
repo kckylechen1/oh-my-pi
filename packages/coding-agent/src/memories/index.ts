@@ -1081,7 +1081,7 @@ function getMemoryRoot(agentDir: string, cwd: string): string {
 
 /**
  * Get the memory root directory for a given working directory.
- * @internal Exported for use by MemoryProtocolHandler. This wrapper exists for API stability
+ * Exported for use by MemoryProtocolHandler. This wrapper exists for API stability
  * and to keep the internal getMemoryRoot function private.
  */
 export function getMemoryRootForCwd(agentDir: string, cwd: string): string {

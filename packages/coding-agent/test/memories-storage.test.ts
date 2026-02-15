@@ -168,4 +168,69 @@ describe("memories/storage", () => {
 		expect(jobCount.count).toBe(1);
 		closeMemoryDb(db);
 	});
+
+	test("getThreadById returns thread when it exists", () => {
+		const db = openMemoryDb(dbPath);
+		const testThread = {
+			id: "test-thread-123",
+			updatedAt: 1000000,
+			rolloutPath: "/test/rollout.jsonl",
+			cwd: "/test/project",
+			sourceKind: "cli",
+		};
+
+		upsertThreads(db, [testThread]);
+
+		const { getThreadById } = require("@oh-my-pi/pi-coding-agent/memories/storage");
+		const result = getThreadById(db, "test-thread-123");
+
+		expect(result).not.toBeNull();
+		expect(result?.id).toBe("test-thread-123");
+		expect(result?.rolloutPath).toBe("/test/rollout.jsonl");
+		expect(result?.cwd).toBe("/test/project");
+		expect(result?.sourceKind).toBe("cli");
+
+		closeMemoryDb(db);
+	});
+
+	test("getThreadById returns null for non-existent thread", () => {
+		const db = openMemoryDb(dbPath);
+		const { getThreadById } = require("@oh-my-pi/pi-coding-agent/memories/storage");
+		const result = getThreadById(db, "nonexistent-thread");
+
+		expect(result).toBeNull();
+
+		closeMemoryDb(db);
+	});
+
+	test("getThreadById handles empty string", () => {
+		const db = openMemoryDb(dbPath);
+		const { getThreadById } = require("@oh-my-pi/pi-coding-agent/memories/storage");
+		const result = getThreadById(db, "");
+
+		expect(result).toBeNull();
+
+		closeMemoryDb(db);
+	});
+
+	test("getThreadById handles special characters in thread ID", () => {
+		const db = openMemoryDb(dbPath);
+		const specialThread = {
+			id: "thread-with-special-chars-@#$%",
+			updatedAt: 1000000,
+			rolloutPath: "/test/special.jsonl",
+			cwd: "/test/project",
+			sourceKind: "cli",
+		};
+
+		upsertThreads(db, [specialThread]);
+
+		const { getThreadById } = require("@oh-my-pi/pi-coding-agent/memories/storage");
+		const result = getThreadById(db, "thread-with-special-chars-@#$%");
+
+		expect(result).not.toBeNull();
+		expect(result?.id).toBe("thread-with-special-chars-@#$%");
+
+		closeMemoryDb(db);
+	});
 });

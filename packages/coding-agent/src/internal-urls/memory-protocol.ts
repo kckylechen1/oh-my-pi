@@ -12,7 +12,7 @@
  */
 import * as path from "node:path";
 import { getAgentDbPath } from "@oh-my-pi/pi-utils/dirs";
-import { getThreadById, openMemoryDb, closeMemoryDb } from "../../memories/storage";
+import { getThreadById, openMemoryDb, closeMemoryDb, type MemoryThread } from "../../memories/storage";
 import type { InternalResource, InternalUrl, ProtocolHandler } from "./types";
 
 export interface MemoryProtocolOptions {
@@ -132,7 +132,7 @@ export class MemoryProtocolHandler implements ProtocolHandler {
 			const agentDir = this.options.getAgentDir();
 			const dbPath = getAgentDbPath(agentDir);
 			const db = openMemoryDb(dbPath);
-			let thread;
+			let thread: MemoryThread | null;
 			try {
 				thread = getThreadById(db, threadId);
 			} finally {

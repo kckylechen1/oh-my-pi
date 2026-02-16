@@ -1,15 +1,15 @@
 /**
- * Hashline edit mode — a line-addressable edit format using content hashes.
+ * Hashline edit mode — a line-addressable edit format using CJK content hashes.
  *
- * Each line in a file is identified by its 1-indexed line number and a short
- * base36 hash derived from the normalized line content (xxHash32, truncated to 4
- * base36 chars).
- * The combined `LINE:HASH` reference acts as both an address and a staleness check:
- * if the file has changed since the caller last read it, hash mismatches are caught
- * before any mutation occurs.
+ * Each line in a file is identified by its 1-indexed line number and a single
+ * CJK ideograph (U+4E00–U+9FFF) derived from the normalized line content
+ * (xxHash32, mapped to one of 20,992 CJK characters).
+ * The combined line-number + CJK-hash reference acts as both an address and a
+ * staleness check: if the file has changed since the caller last read it, hash
+ * mismatches are caught before any mutation occurs.
  *
- * Displayed format: `LINENUM:HASH|CONTENT`
- * Reference format: `"LINENUM:HASH"` (e.g. `"5:a3f2"`)
+ * Displayed format: `LINENUM<CJK>CONTENT` (no separators — the CJK character delimits line number from content)
+ * Reference format: `"LINENUM<CJK>"` (e.g. `"5丐"`)
  */
 
 import type { HashlineEdit } from "./index";
@@ -55,11 +55,36 @@ function splitDstLines(dst: string): string[] {
 	return dst === "" ? [] : dst.split("\n");
 }
 
-/** Pattern matching hashline display format: `LINE:HASH|CONTENT` */
-const HASHLINE_PREFIX_RE = /^\s*(?:>>>|>>)?\s*\d+:[0-9a-zA-Z]{1,16}\|/;
+/** Pattern matching hashline display format: optional marker + `LINE<CJK>CONTENT` */
+const HASHLINE_DISPLAY_RE = /^(\s*(?:>>>|>>)?\s*)(\d+)([\u4E00-\u9FFF])(.*)$/u;
 
 /** Pattern matching a unified-diff `+` prefix (but not `++`) */
 const DIFF_PLUS_RE = /^\+(?!\+)/;
+
+interface ParsedHashlineDisplayLine {
+	prefix: string;
+	lineNum: number;
+	hash: string;
+	content: string;
+}
+
+function parseHashlineDisplayLine(line: string): ParsedHashlineDisplayLine | undefined {
+	const match = line.match(HASHLINE_DISPLAY_RE);
+	if (!match) return undefined;
+	const prefix = match[1] ?? "";
+	const lineNum = Number.parseInt(match[2], 10);
+	if (!Number.isFinite(lineNum) || lineNum < 1) return undefined;
+	const hash = match[3] ?? "";
+	const content = match[4] ?? "";
+	if (computeLineHash(lineNum, content) !== hash) return undefined;
+	return { prefix, lineNum, hash, content };
+}
+
+/** Strip a copied hashline display prefix when the embedded hash matches the trailing content. */
+function stripHashlineDisplayPrefix(line: string): string | undefined {
+	const parsed = parseHashlineDisplayLine(line);
+	return parsed?.content;
+}
 
 /**
  * Compare two strings ignoring all whitespace differences.
@@ -206,7 +231,7 @@ function stripRangeBoundaryEcho(fileLines: string[], startLine: number, endLine:
 /**
  * Strip hashline display prefixes and diff `+` markers from replacement lines.
  *
- * Models frequently copy the `LINE:HASH  ` prefix from read output into their
+ * Models frequently copy the `LINE<CJK>CONTENT` prefix from read output into their
  * replacement content, or include unified-diff `+` prefixes. Both corrupt the
  * output file. This strips them heuristically before application.
  */
@@ -219,7 +244,7 @@ function stripNewLinePrefixes(lines: string[]): string[] {
 	for (const l of lines) {
 		if (l.length === 0) continue;
 		nonEmpty++;
-		if (HASHLINE_PREFIX_RE.test(l)) hashPrefixCount++;
+		if (stripHashlineDisplayPrefix(l) !== undefined) hashPrefixCount++;
 		if (DIFF_PLUS_RE.test(l)) diffPlusCount++;
 	}
 	if (nonEmpty === 0) return lines;
@@ -230,23 +255,28 @@ function stripNewLinePrefixes(lines: string[]): string[] {
 	if (!stripHash && !stripPlus) return lines;
 
 	return lines.map(l => {
-		if (stripHash) return l.replace(HASHLINE_PREFIX_RE, "");
+		if (stripHash) {
+			const stripped = stripHashlineDisplayPrefix(l);
+			return stripped ?? l;
+		}
 		if (stripPlus) return l.replace(DIFF_PLUS_RE, "");
 		return l;
 	});
 }
 
-const HASH_LEN = 2;
-const RADIX = 16;
-const HASH_MOD = RADIX ** HASH_LEN;
-
-const DICT = Array.from({ length: HASH_MOD }, (_, i) => i.toString(RADIX).padStart(HASH_LEN, "0"));
+/** Start of CJK Unified Ideographs block */
+const CJK_BASE = 0x4e00;
+/** End of CJK Unified Ideographs block (inclusive) */
+const CJK_END = 0x9fff;
+/** Number of distinct CJK hash characters (20,992) */
+const HASH_MOD = CJK_END - CJK_BASE + 1;
 
 /**
- * Compute a short base36 hash of a single line.
+ * Compute a CJK hash character for a single line.
  *
- * Uses xxHash64 on a whitespace-normalized line, truncated to {@link HASH_LEN}
- * base36 characters. The `idx` parameter is accepted for compatibility with older
+ * Uses xxHash32 on a whitespace-normalized line, mapped to a single CJK
+ * ideograph in the range U+4E00–U+9FFF (20,992 possible values).
+ * The `idx` parameter is accepted for compatibility with older
  * call sites, but is not currently mixed into the hash.
  * The line input should not include a trailing newline.
  */
@@ -256,13 +286,30 @@ export function computeLineHash(idx: number, line: string): string {
 	}
 	line = line.replace(/\s+/g, "");
 	void idx; // Might use line, but for now, let's not.
-	return DICT[Bun.hash.xxHash32(line) % HASH_MOD];
+	return String.fromCharCode(CJK_BASE + (Bun.hash.xxHash32(line) % HASH_MOD));
+}
+
+/** Format a single line with hashline prefix: `LINENUM<CJK>CONTENT` */
+export function formatHashLine(lineNum: number, line: string): string {
+	return `${lineNum}${computeLineHash(lineNum, line)}${line}`;
+}
+
+/** Format a single line with a padded line-number prefix: `  42|CONTENT` */
+export function formatNumberedLine(lineNum: number, line: string, padWidth: number): string {
+	return `${String(lineNum).padStart(padWidth, " ")}|${line}`;
+}
+
+/** Format a block of text with padded line-number prefixes. */
+export function formatNumberedLines(content: string, startLine = 1): string {
+	const lines = content.split("\n");
+	const padWidth = String(startLine + lines.length - 1).length;
+	return lines.map((line, i) => formatNumberedLine(startLine + i, line, padWidth)).join("\n");
 }
 
 /**
  * Format file content with hashline prefixes for display.
  *
- * Each line becomes `LINENUM:HASH|CONTENT` where LINENUM is 1-indexed.
+ * Each line becomes `LINENUM` + CJK hash character + content (no separators).
  *
  * @param content - Raw file content string
  * @param startLine - First line number (1-indexed, defaults to 1)
@@ -271,16 +318,22 @@ export function computeLineHash(idx: number, line: string): string {
  * @example
  * ```
  * formatHashLines("function hi() {\n  return;\n}")
- * // "1:HH|function hi() {\n2:HH|  return;\n3:HH|}"
+ * // "1\u4E00function hi() {\n2\u4E01  return;\n3\u4E02}"
  * ```
  */
 export function formatHashLines(content: string, startLine = 1): string {
 	const lines = content.split("\n");
-	return lines
-		.map((line, i) => {
-			const num = startLine + i;
-			const hash = computeLineHash(num, line);
-			return `${num}:${hash}|${line}`;
+	return lines.map((line, i) => formatHashLine(startLine + i, line)).join("\n");
+}
+
+/** Convert hashline-prefixed display text into human-readable numbered lines for TUI rendering. */
+export function formatHashlineTextForDisplay(text: string): string {
+	return text
+		.split("\n")
+		.map(line => {
+			const parsed = parseHashlineDisplayLine(line);
+			if (!parsed) return line;
+			return `${parsed.prefix}${parsed.lineNum}|${parsed.content}`;
 		})
 		.join("\n");
 }
@@ -352,7 +405,7 @@ export async function* streamHashLinesFromUtf8(
 	};
 
 	const pushLine = (line: string): string[] => {
-		const formatted = `${lineNum}:${computeLineHash(lineNum, line)}|${line}`;
+		const formatted = formatHashLine(lineNum, line);
 		lineNum++;
 
 		const chunksToYield: string[] = [];
@@ -446,7 +499,7 @@ export async function* streamHashLinesFromLines(
 
 	const pushLine = (line: string): string[] => {
 		sawAnyLine = true;
-		const formatted = `${lineNum}:${computeLineHash(lineNum, line)}|${line}`;
+		const formatted = formatHashLine(lineNum, line);
 		lineNum++;
 
 		const chunksToYield: string[] = [];
@@ -498,24 +551,24 @@ export async function* streamHashLinesFromLines(
 }
 
 /**
- * Parse a line reference string like `"5:abcd"` into structured form.
+ * Parse a line reference string like `"5丐"` into structured form.
  *
- * @throws Error if the format is invalid (not `NUMBER:HEXHASH`)
+ * @throws Error if the format is invalid (not `NUMBER` + CJK character)
  */
 export function parseLineRef(ref: string): { line: number; hash: string } {
-	// Strip display-format suffix: "5:ab|some content" → "5:ab", or legacy "5:ab  some content" → "5:ab"
+	// Strip display-format suffix: "5\u4e10some content" may include trailing source text.
 	// Models often copy the full display format from read output.
 	const cleaned = ref
 		.replace(/\|.*$/, "")
 		.replace(/ {2}.*$/, "")
 		.replace(/^>+\s*/, "")
 		.trim();
-	const normalized = cleaned.replace(/\s*:\s*/, ":");
-	const strictMatch = normalized.match(/^(\d+):([0-9a-zA-Z]{1,16})$/);
-	const prefixMatch = strictMatch ? null : normalized.match(new RegExp(`^(\\d+):([0-9a-zA-Z]{${HASH_LEN}})`));
+	const normalized = cleaned.replace(/\s+/g, "");
+	const strictMatch = normalized.match(/^(\d+)([\u4E00-\u9FFF])$/);
+	const prefixMatch = strictMatch ? null : normalized.match(/^(\d+)([\u4E00-\u9FFF])/);
 	const match = strictMatch ?? prefixMatch;
 	if (!match) {
-		throw new Error(`Invalid line reference "${ref}". Expected format "LINE:HASH" (e.g. "5:aa").`);
+		throw new Error(`Invalid line reference "${ref}". Expected format "LINE<CJK>" (e.g. "5丐").`);
 	}
 	const line = Number.parseInt(match[1], 10);
 	if (line < 1) {
@@ -535,7 +588,7 @@ const MISMATCH_CONTEXT = 2;
  * Error thrown when one or more hashline references have stale hashes.
  *
  * Displays grep-style output with `>>>` markers on mismatched lines,
- * showing the correct `LINE:HASH` so the caller can fix all refs at once.
+ * showing the correct line-number + CJK hash anchors so the caller can fix all refs at once.
  */
 export class HashlineMismatchError extends Error {
 	readonly remaps: ReadonlyMap<string, string>;
@@ -548,7 +601,7 @@ export class HashlineMismatchError extends Error {
 		const remaps = new Map<string, string>();
 		for (const m of mismatches) {
 			const actual = computeLineHash(m.line, fileLines[m.line - 1]);
-			remaps.set(`${m.line}:${m.expected}`, `${m.line}:${actual}`);
+			remaps.set(`${m.line}${m.expected}`, `${m.line}${actual}`);
 		}
 		this.remaps = remaps;
 	}
@@ -573,7 +626,7 @@ export class HashlineMismatchError extends Error {
 		const lines: string[] = [];
 
 		lines.push(
-			`${mismatches.length} line${mismatches.length > 1 ? "s have" : " has"} changed since last read. Use the updated LINE:HASH references shown below (>>> marks changed lines).`,
+			`${mismatches.length} line${mismatches.length > 1 ? "s have" : " has"} changed since last read. Use the updated references shown below (>>> marks changed lines).`,
 		);
 		lines.push("");
 
@@ -587,12 +640,12 @@ export class HashlineMismatchError extends Error {
 
 			const content = fileLines[lineNum - 1];
 			const hash = computeLineHash(lineNum, content);
-			const prefix = `${lineNum}:${hash}`;
+			const prefix = `${lineNum}${hash}`;
 
 			if (mismatchSet.has(lineNum)) {
-				lines.push(`>>> ${prefix}|${content}`);
+				lines.push(`>>> ${prefix}${content}`);
 			} else {
-				lines.push(`    ${prefix}|${content}`);
+				lines.push(`    ${prefix}${content}`);
 			}
 		}
 		return lines.join("\n");
@@ -734,7 +787,7 @@ export function applyHashlineEdits(
 			}
 			case "insertAfter": {
 				if (dstLines.length === 0) {
-					throw new Error('Insert-after edit (src "N:HH..") requires non-empty dst');
+					throw new Error("Insert-after edit requires non-empty dst");
 				}
 				const status = validateOrRelocateRef(spec.after);
 				if (!status.ok) continue;
@@ -851,7 +904,7 @@ export function applyHashlineEdits(
 					if (origLines.join("\n") === nextLines.join("\n")) {
 						noopEdits.push({
 							editIndex: idx,
-							loc: `${spec.ref.line}:${spec.ref.hash}`,
+							loc: `${spec.ref.line}${spec.ref.hash}`,
 							currentContent: origLines.join("\n"),
 						});
 						break;
@@ -872,7 +925,7 @@ export function applyHashlineEdits(
 				if (origLines.join("\n") === newLines.join("\n")) {
 					noopEdits.push({
 						editIndex: idx,
-						loc: `${spec.ref.line}:${spec.ref.hash}`,
+						loc: `${spec.ref.line}${spec.ref.hash}`,
 						currentContent: origLines.join("\n"),
 					});
 					break;
@@ -893,7 +946,7 @@ export function applyHashlineEdits(
 				if (origLines.join("\n") === newLines.join("\n")) {
 					noopEdits.push({
 						editIndex: idx,
-						loc: `${spec.start.line}:${spec.start.hash}`,
+						loc: `${spec.start.line}${spec.start.hash}`,
 						currentContent: origLines.join("\n"),
 					});
 					break;
@@ -908,7 +961,7 @@ export function applyHashlineEdits(
 				if (inserted.length === 0) {
 					noopEdits.push({
 						editIndex: idx,
-						loc: `${spec.after.line}:${spec.after.hash}`,
+						loc: `${spec.after.line}${spec.after.hash}`,
 						currentContent: originalFileLines[spec.after.line - 1],
 					});
 					break;

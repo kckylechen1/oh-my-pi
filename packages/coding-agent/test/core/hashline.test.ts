@@ -16,9 +16,9 @@ import {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("computeLineHash", () => {
-	test("returns 2-4 character alphanumeric hash string", () => {
+	test("returns single CJK hash character", () => {
 		const hash = computeLineHash(1, "hello");
-		expect(hash).toMatch(/^[0-9a-z]{2,4}$/);
+		expect(hash).toMatch(/^[\u4E00-\u9FFF]$/u);
 	});
 
 	test("same content at same line produces same hash", () => {
@@ -35,7 +35,7 @@ describe("computeLineHash", () => {
 
 	test("empty line produces valid hash", () => {
 		const hash = computeLineHash(1, "");
-		expect(hash).toMatch(/^[0-9a-z]{2,4}$/);
+		expect(hash).toMatch(/^[\u4E00-\u9FFF]$/u);
 	});
 });
 
@@ -47,30 +47,30 @@ describe("formatHashLines", () => {
 	test("formats single line", () => {
 		const result = formatHashLines("hello");
 		const hash = computeLineHash(1, "hello");
-		expect(result).toBe(`1:${hash}|hello`);
+		expect(result).toBe(`1${hash}hello`);
 	});
 
 	test("formats multiple lines with 1-indexed numbers", () => {
 		const result = formatHashLines("foo\nbar\nbaz");
 		const lines = result.split("\n");
 		expect(lines).toHaveLength(3);
-		expect(lines[0]).toStartWith("1:");
-		expect(lines[1]).toStartWith("2:");
-		expect(lines[2]).toStartWith("3:");
+		expect(lines[0]).toMatch(/^1[\u4E00-\u9FFF]/u);
+		expect(lines[1]).toMatch(/^2[\u4E00-\u9FFF]/u);
+		expect(lines[2]).toMatch(/^3[\u4E00-\u9FFF]/u);
 	});
 
 	test("respects custom startLine", () => {
 		const result = formatHashLines("foo\nbar", 10);
 		const lines = result.split("\n");
-		expect(lines[0]).toStartWith("10:");
-		expect(lines[1]).toStartWith("11:");
+		expect(lines[0]).toMatch(/^10[\u4E00-\u9FFF]/u);
+		expect(lines[1]).toMatch(/^11[\u4E00-\u9FFF]/u);
 	});
 
 	test("handles empty lines in content", () => {
 		const result = formatHashLines("foo\n\nbar");
 		const lines = result.split("\n");
 		expect(lines).toHaveLength(3);
-		expect(lines[1]).toMatch(/^2:[0-9a-z]{2,4}\|$/);
+		expect(lines[1]).toMatch(/^2[\u4E00-\u9FFF]$/u);
 	});
 
 	test("round-trips with computeLineHash", () => {
@@ -79,7 +79,7 @@ describe("formatHashLines", () => {
 		const lines = formatted.split("\n");
 
 		for (let i = 0; i < lines.length; i++) {
-			const match = lines[i].match(/^(\d+):([0-9a-z]+)\|(.*)$/);
+			const match = lines[i].match(/^(\d+)([\u4E00-\u9FFF])(.*)$/u);
 			expect(match).not.toBeNull();
 			const lineNum = Number.parseInt(match![1], 10);
 			const hash = match![2];
@@ -148,34 +148,29 @@ describe("streamHashLinesFrom*", () => {
 
 describe("parseLineRef", () => {
 	test("parses valid reference", () => {
-		const ref = parseLineRef("5:abcd");
-		expect(ref).toEqual({ line: 5, hash: "abcd" });
+		const ref = parseLineRef("5丐");
+		expect(ref).toEqual({ line: 5, hash: "丐" });
 	});
 
-	test("parses single-digit hash", () => {
-		const ref = parseLineRef("1:a");
-		expect(ref).toEqual({ line: 1, hash: "a" });
+	test("parses display-format line and ignores trailing content", () => {
+		const ref = parseLineRef("12丁const x = 1");
+		expect(ref).toEqual({ line: 12, hash: "丁" });
 	});
 
-	test("parses long hash", () => {
-		const ref = parseLineRef("100:abcdef0123456789");
-		expect(ref).toEqual({ line: 100, hash: "abcdef0123456789" });
-	});
-
-	test("rejects missing colon", () => {
-		expect(() => parseLineRef("5abcd")).toThrow(/Invalid line reference/);
+	test("rejects missing hash character", () => {
+		expect(() => parseLineRef("5")).toThrow(/Invalid line reference/);
 	});
 
 	test("rejects non-numeric line", () => {
-		expect(() => parseLineRef("abc:1234")).toThrow(/Invalid line reference/);
+		expect(() => parseLineRef("abc丐")).toThrow(/Invalid line reference/);
 	});
 
-	test("rejects non-alphanumeric hash", () => {
-		expect(() => parseLineRef("5:$$$$")).toThrow(/Invalid line reference/);
+	test("rejects non-CJK hash", () => {
+		expect(() => parseLineRef("5:a")).toThrow(/Invalid line reference/);
 	});
 
 	test("rejects line number 0", () => {
-		expect(() => parseLineRef("0:abcd")).toThrow(/Line number must be >= 1/);
+		expect(() => parseLineRef("0丐")).toThrow(/Line number must be >= 1/);
 	});
 
 	test("rejects empty string", () => {
@@ -183,7 +178,7 @@ describe("parseLineRef", () => {
 	});
 
 	test("rejects empty hash", () => {
-		expect(() => parseLineRef("5:")).toThrow(/Invalid line reference/);
+		expect(() => parseLineRef("5 ")).toThrow(/Invalid line reference/);
 	});
 });
 
@@ -211,7 +206,8 @@ describe("validateLineRef", () => {
 
 	test("rejects mismatched hash", () => {
 		const lines = ["hello", "world"];
-		expect(() => validateLineRef({ line: 1, hash: "0000" }, lines)).toThrow(/has changed since last read/);
+		const wrongHash = computeLineHash(1, "hello") === "一" ? "丁" : "一";
+		expect(() => validateLineRef({ line: 1, hash: wrongHash }, lines)).toThrow(/has changed since last read/);
 	});
 
 	test("validates last line correctly", () => {
@@ -227,7 +223,7 @@ describe("validateLineRef", () => {
 
 describe("applyHashlineEdits — replace", () => {
 	function makeRef(lineNum: number, content: string): string {
-		return `${lineNum}:${computeLineHash(lineNum, content)}`;
+		return `${lineNum}${computeLineHash(lineNum, content)}`;
 	}
 
 	test("replaces single line", () => {
@@ -285,7 +281,7 @@ describe("applyHashlineEdits — replace", () => {
 
 describe("applyHashlineEdits — delete", () => {
 	function makeRef(lineNum: number, content: string): string {
-		return `${lineNum}:${computeLineHash(lineNum, content)}`;
+		return `${lineNum}${computeLineHash(lineNum, content)}`;
 	}
 
 	test("deletes single line", () => {
@@ -330,7 +326,7 @@ describe("applyHashlineEdits — delete", () => {
 
 describe("applyHashlineEdits — insert", () => {
 	function makeRef(lineNum: number, content: string): string {
-		return `${lineNum}:${computeLineHash(lineNum, content)}`;
+		return `${lineNum}${computeLineHash(lineNum, content)}`;
 	}
 
 	test("inserts after a line", () => {
@@ -372,7 +368,7 @@ describe("applyHashlineEdits — insert", () => {
 
 describe("applyHashlineEdits — heuristics", () => {
 	function makeRef(lineNum: number, content: string): string {
-		return `${lineNum}:${computeLineHash(lineNum, content)}`;
+		return `${lineNum}${computeLineHash(lineNum, content)}`;
 	}
 
 	test("strips insert-after anchor echo", () => {
@@ -509,13 +505,13 @@ describe("applyHashlineEdits — heuristics", () => {
 		);
 	});
 
-	test("accepts polluted src that starts with LINE:HASH but includes trailing content", () => {
+	test("accepts polluted src that starts with LINE<CJK> but includes trailing content", () => {
 		const content = "aaa\nbbb\nccc";
 		const srcHash = computeLineHash(2, "bbb");
 		const edits: HashlineEdit[] = [
 			{
 				set_line: {
-					anchor: `2:${srcHash}export function foo(a, b) {}`, // comma in trailing content
+					anchor: `2${srcHash}export function foo(a, b) {}`, // comma in trailing content
 					new_text: "BBB",
 				},
 			},
@@ -556,7 +552,7 @@ describe("applyHashlineEdits — heuristics", () => {
 
 describe("applyHashlineEdits — multiple edits", () => {
 	function makeRef(lineNum: number, content: string): string {
-		return `${lineNum}:${computeLineHash(lineNum, content)}`;
+		return `${lineNum}${computeLineHash(lineNum, content)}`;
 	}
 
 	test("applies two non-overlapping replaces (bottom-up safe)", () => {
@@ -624,19 +620,20 @@ describe("applyHashlineEdits — multiple edits", () => {
 
 describe("applyHashlineEdits — errors", () => {
 	function makeRef(lineNum: number, content: string): string {
-		return `${lineNum}:${computeLineHash(lineNum, content)}`;
+		return `${lineNum}${computeLineHash(lineNum, content)}`;
 	}
 
 	test("rejects stale hash", () => {
 		const content = "aaa\nbbb\nccc";
-		// Use a hash that doesn't match any line (avoid 00 — ccc hashes to 00)
-		const edits: HashlineEdit[] = [{ set_line: { anchor: "2:zz", new_text: "BBB" } }];
+		const wrongHash = computeLineHash(2, "bbb") === "一" ? "丁" : "一";
+		const edits: HashlineEdit[] = [{ set_line: { anchor: `2${wrongHash}`, new_text: "BBB" } }];
 		expect(() => applyHashlineEdits(content, edits)).toThrow(HashlineMismatchError);
 	});
 
 	test("stale hash error shows >>> markers with correct hashes", () => {
 		const content = "aaa\nbbb\nccc\nddd\neee";
-		const edits: HashlineEdit[] = [{ set_line: { anchor: "2:zz", new_text: "BBB" } }];
+		const wrongHash = computeLineHash(2, "bbb") === "一" ? "丁" : "一";
+		const edits: HashlineEdit[] = [{ set_line: { anchor: `2${wrongHash}`, new_text: "BBB" } }];
 
 		try {
 			applyHashlineEdits(content, edits);
@@ -648,20 +645,23 @@ describe("applyHashlineEdits — errors", () => {
 			expect(msg).toContain(">>>");
 			// Should show the correct hash for line 2
 			const correctHash = computeLineHash(2, "bbb");
-			expect(msg).toContain(`2:${correctHash}|bbb`);
+			expect(msg).toContain(`2${correctHash}bbb`);
 			// Context lines should NOT have >>> markers
 			const lines = msg.split("\n");
-			const contextLines = lines.filter(l => l.startsWith("    ") && !l.startsWith("    ...") && l.includes(":"));
+			const contextLines = lines.filter(
+				l => l.startsWith("    ") && !l.startsWith("    ...") && /^\s*\d+[\u4E00-\u9FFF]/u.test(l),
+			);
 			expect(contextLines.length).toBeGreaterThan(0);
 		}
 	});
 
 	test("stale hash error collects all mismatches", () => {
 		const content = "aaa\nbbb\nccc\nddd\neee";
-		// Use hashes that don't match any line (avoid 00 — ccc hashes to 00)
+		const wrongHash2 = computeLineHash(2, "bbb") === "一" ? "丁" : "一";
+		const wrongHash4 = computeLineHash(4, "ddd") === "一" ? "丁" : "一";
 		const edits: HashlineEdit[] = [
-			{ set_line: { anchor: "2:zz", new_text: "BBB" } },
-			{ set_line: { anchor: "4:zz", new_text: "DDD" } },
+			{ set_line: { anchor: `2${wrongHash2}`, new_text: "BBB" } },
+			{ set_line: { anchor: `4${wrongHash4}`, new_text: "DDD" } },
 		];
 
 		try {
@@ -681,7 +681,7 @@ describe("applyHashlineEdits — errors", () => {
 
 	test("relocates stale line refs when hash uniquely identifies a moved line", () => {
 		const content = "aaa\nbbb\nccc";
-		const staleButUnique = `2:${computeLineHash(1, "ccc")}`;
+		const staleButUnique = `2${computeLineHash(1, "ccc")}`;
 		const edits: HashlineEdit[] = [{ set_line: { anchor: staleButUnique, new_text: "CCC" } }];
 
 		const result = applyHashlineEdits(content, edits);
@@ -690,7 +690,7 @@ describe("applyHashlineEdits — errors", () => {
 
 	test("does not relocate when expected hash is non-unique", () => {
 		const content = "dup\nmid\ndup";
-		const staleDuplicate = `2:${computeLineHash(1, "dup")}`;
+		const staleDuplicate = `2${computeLineHash(1, "dup")}`;
 		const edits: HashlineEdit[] = [{ set_line: { anchor: staleDuplicate, new_text: "DUP" } }];
 
 		expect(() => applyHashlineEdits(content, edits)).toThrow(HashlineMismatchError);
@@ -698,7 +698,7 @@ describe("applyHashlineEdits — errors", () => {
 
 	test("rejects out-of-range line", () => {
 		const content = "aaa\nbbb";
-		const edits: HashlineEdit[] = [{ set_line: { anchor: "10:aa", new_text: "X" } }];
+		const edits: HashlineEdit[] = [{ set_line: { anchor: "10丐", new_text: "X" } }];
 
 		expect(() => applyHashlineEdits(content, edits)).toThrow(/does not exist/);
 	});

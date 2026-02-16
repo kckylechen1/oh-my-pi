@@ -23,6 +23,7 @@ import {
 	computePatchDiff,
 	type EditDiffError,
 	type EditDiffResult,
+	formatHashlineTextForDisplay,
 } from "../../patch";
 import { BASH_DEFAULT_PREVIEW_LINES } from "../../tools/bash";
 import {
@@ -594,6 +595,10 @@ export class ToolExecutionComponent extends Container {
 				return sanitizeText(c.text || "");
 			})
 			.join("\n");
+
+		if (this.#toolName === "read" || this.#toolName === "grep" || this.#toolName === "edit") {
+			output = formatHashlineTextForDisplay(output);
+		}
 
 		if (imageBlocks.length > 0 && (!TERMINAL.imageProtocol || !this.#showImages)) {
 			const imageIndicators = imageBlocks

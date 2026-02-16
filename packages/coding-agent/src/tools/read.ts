@@ -11,7 +11,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { renderPromptTemplate } from "../config/prompt-templates";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import { getLanguageFromPath, type Theme } from "../modes/theme/theme";
-import { computeLineHash } from "../patch/hashline";
+import { formatHashLines, formatHashlineTextForDisplay, formatNumberedLines } from "../patch/hashline";
 import readDescription from "../prompts/tools/read.md" with { type: "text" };
 import type { ToolSession } from "../sdk";
 import { renderCodeCell, renderStatusLine } from "../tui";
@@ -758,26 +758,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 
 			const shouldAddHashLines = displayMode.hashLines;
 			const shouldAddLineNumbers = shouldAddHashLines ? false : displayMode.lineNumbers;
-			const prependLineNumbers = (text: string, startNum: number): string => {
-				const textLines = text.split("\n");
-				const lastLineNum = startNum + textLines.length - 1;
-				const padWidth = String(lastLineNum).length;
-				return textLines
-					.map((line, i) => {
-						const lineNum = String(startNum + i).padStart(padWidth, " ");
-						return `${lineNum}|${line}`;
-					})
-					.join("\n");
-			};
-			const prependHashLines = (text: string, startNum: number): string => {
-				const textLines = text.split("\n");
-				return textLines
-					.map((line, i) => `${startNum + i}:${computeLineHash(startNum + i, line)}|${line}`)
-					.join("\n");
-			};
 			const formatText = (text: string, startNum: number): string => {
-				if (shouldAddHashLines) return prependHashLines(text, startNum);
-				if (shouldAddLineNumbers) return prependLineNumbers(text, startNum);
+				if (shouldAddHashLines) return formatHashLines(text, startNum);
+				if (shouldAddLineNumbers) return formatNumberedLines(text, startNum);
 				return text;
 			};
 
@@ -916,24 +899,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 
 		const shouldAddHashLines = displayMode.hashLines;
 		const shouldAddLineNumbers = shouldAddHashLines ? false : displayMode.lineNumbers;
-		const prependLineNumbers = (text: string, startNum: number): string => {
-			const textLines = text.split("\n");
-			const lastLineNum = startNum + textLines.length - 1;
-			const padWidth = String(lastLineNum).length;
-			return textLines
-				.map((line, i) => {
-					const lineNum = String(startNum + i).padStart(padWidth, " ");
-					return `${lineNum}|${line}`;
-				})
-				.join("\n");
-		};
-		const prependHashLines = (text: string, startNum: number): string => {
-			const textLines = text.split("\n");
-			return textLines.map((line, i) => `${startNum + i}:${computeLineHash(startNum + i, line)}|${line}`).join("\n");
-		};
 		const formatText = (text: string, startNum: number): string => {
-			if (shouldAddHashLines) return prependHashLines(text, startNum);
-			if (shouldAddLineNumbers) return prependLineNumbers(text, startNum);
+			if (shouldAddHashLines) return formatHashLines(text, startNum);
+			if (shouldAddLineNumbers) return formatNumberedLines(text, startNum);
 			return text;
 		};
 
@@ -1101,7 +1069,8 @@ export const readToolRenderer = {
 		args?: ReadRenderArgs,
 	): Component {
 		const details = result.details;
-		const contentText = result.content?.find(c => c.type === "text")?.text ?? "";
+		const rawContentText = result.content?.find(c => c.type === "text")?.text ?? "";
+		const contentText = formatHashlineTextForDisplay(rawContentText);
 		const imageContent = result.content?.find(c => c.type === "image");
 		const rawPath = args?.file_path || args?.path || "";
 		const filePath = shortenPath(rawPath);

@@ -21,6 +21,7 @@ import {
 } from "../tools/render-utils";
 import type { RenderCallOptions } from "../tools/renderers";
 import { Ellipsis, Hasher, type RenderCache, renderStatusLine, truncateToWidth } from "../tui";
+import { formatHashlineTextForDisplay } from "./hashline";
 import type { DiffError, DiffResult, Operation } from "./types";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -331,7 +332,8 @@ export const editToolRenderer = {
 				: "";
 
 		// Pre-compute error text (static)
-		const errorText = result.isError ? (result.content?.find(c => c.type === "text")?.text ?? "") : "";
+		const rawErrorText = result.isError ? (result.content?.find(c => c.type === "text")?.text ?? "") : "";
+		const errorText = formatHashlineTextForDisplay(rawErrorText);
 
 		let cached: RenderCache | undefined;
 

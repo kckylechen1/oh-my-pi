@@ -25,9 +25,20 @@
 ## [12.7.0] - 2026-02-16
 ### Added
 
+- Added `formatHashLine()` function to format a single line with hashline prefix
+- Added `formatNumberedLine()` and `formatNumberedLines()` functions for padded line-number prefixes
+- Added `formatHashlineTextForDisplay()` function to convert hashline-prefixed display text into human-readable numbered lines for TUI rendering
+- Added automatic conversion of hashline display format to numbered format in tool execution output for improved terminal readability
 - Added Z.AI web search provider support via remote MCP endpoint (webSearchPrime)
 - Added `zai` as a selectable web search provider option in settings
 - Added Z.AI to automatic provider fallback chain for web search
+
+### Changed
+
+- Changed hashline format from `LINE:HASH|content` to `LINE<CJK>content` — line number followed directly by a single CJK ideograph hash character with no separators
+- Updated hashline hash algorithm from base36 (4 chars) to single CJK character (U+4E00–U+9FFF, 20,992 possible values) for more compact line references
+- Modified read, grep, and edit tool output formatting to display hashline-prefixed lines with CJK hash characters instead of colon-separated hashes
+- Updated all tool prompts and documentation to reflect new hashline anchor format (e.g., `42丐` instead of `42:a3f2`)
 
 ## [12.6.0] - 2026-02-16
 ### Added

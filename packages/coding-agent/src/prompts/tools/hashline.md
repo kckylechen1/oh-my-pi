@@ -1,11 +1,11 @@
 # Edit (Hash Anchored)
 
-Line-addressed edits using hash-verified line references. Read files in hashline mode, collect exact `LINE:HASH` references, and submit edits that change only the targeted token or expression.
-**CRITICAL: Copy `LINE:HASH` refs verbatim from read output. Use only the anchor prefix (e.g., `{{hashline 42 "const x = 1"}}`), never the trailing source text after `|`.**
+Line-addressed edits using hash-verified line references. Each line in read output starts with its line number and a single CJK character (the content hash) — e.g. `42丐const x = 1`. The number + CJK char form the **anchor**; copy it verbatim to reference that line.
+**CRITICAL: Copy anchors verbatim from read output — the line number + CJK character only (e.g., `{{hashline 42 "const x = 1"}}`), never the trailing source text.**
 
 <workflow>
-1. Read the target file (`read`) to obtain `LINE:HASH` references
-2. Collect the exact `LINE:HASH` refs for lines you will change
+1. Read the target file (`read`) to obtain anchors (line number + CJK hash char)
+2. Collect the exact anchors for lines you will change
 3. Direction-lock each mutation: identify the exact current token/expression → the intended replacement
 4. Submit one `edit` call containing all operations for that file
 5. If another edit is needed on the same file: re-read first, then edit (hashes change after every edit)
@@ -15,14 +15,14 @@ Line-addressed edits using hash-verified line references. Read files in hashline
 <operations>
 Four edit variants are available:
 - **`set_line`**: Replace a single line
-  `{ set_line: { anchor: "LINE:HASH", new_text: "..." } }`
-  `new_text: ""` keeps the line but makes it blank.
+	`{ set_line: { anchor: "N丐", new_text: "..." } }`
+	`new_text: ""` keeps the line but makes it blank.
 - **`replace_lines`**: Replace a contiguous range (use for deletions with `new_text: ""`)
-  `{ replace_lines: { start_anchor: "LINE:HASH", end_anchor: "LINE:HASH", new_text: "..." } }`
+	`{ replace_lines: { start_anchor: "N丐", end_anchor: "M丑", new_text: "..." } }`
 - **`insert_after`**: Add new content after an anchor line
-  `{ insert_after: { anchor: "LINE:HASH", text: "..." } }`
+	`{ insert_after: { anchor: "N丐", text: "..." } }`
 - **`replace`**: Substring-style fuzzy match (when line refs are unavailable)
-  `{ replace: { old_text: "...", new_text: "...", all?: boolean } }`
+	`{ replace: { old_text: "...", new_text: "...", all?: boolean } }`
 **Atomicity:** All edits in one call validate against the file as last read. Line numbers and hashes refer to the original state, not post-edit state. The applicator sorts and applies bottom-up automatically.
 </operations>
 
@@ -37,7 +37,7 @@ Four edit variants are available:
 
 <recovery>
 **Hash mismatch (`>>>` error):**
-→ Copy the updated `LINE:HASH` refs from the error output verbatim and retry with the same intended mutation.
+→ Copy the updated anchors from the error output verbatim and retry with the same intended mutation.
 → Re-read only if you need lines not shown in the error.
 → If mismatch repeats after applying updated refs, stop and re-read the relevant region.
 **No-op error ("identical content"):**
@@ -76,10 +76,10 @@ replace: { old_text: "x = 42", new_text: "x = 99" }
 Before submitting, verify:
 - [ ] Payload shape: `{"path": string, "edits": [operation, ...]}`  with non-empty `edits` array
 - [ ] Each operation has exactly one variant key: `set_line` | `replace_lines` | `insert_after` | `replace`
-- [ ] Each anchor is copied exactly from the `LINE:HASH` prefix (no spaces, no trailing source text)
-- [ ] `new_text`/`text` contains plain replacement lines only — no `LINE:HASH` prefixes, no diff `+` markers
+- [ ] Each anchor is copied exactly from read output — the line number + CJK character (no spaces, no trailing source text)
+- [ ] `new_text`/`text` contains plain replacement lines only — no hashline prefixes, no diff `+` markers
 - [ ] Each replacement differs from the current line content
 - [ ] Each operation targets one logical change site with minimal scope
 - [ ] Formatting of replaced lines matches the original exactly, except for the targeted change
 </validation>
-**REMINDER: Copy `LINE:HASH` refs verbatim. Anchors are `LINE:HASH` only — never `LINE:HASH|content`. Preserve exact formatting. Change only the targeted token.**
+**REMINDER: Copy anchors verbatim. Anchors are the line number + CJK hash character only — never the source text after it. Preserve exact formatting. Change only the targeted token.**

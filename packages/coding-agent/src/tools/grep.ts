@@ -9,7 +9,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { renderPromptTemplate } from "../config/prompt-templates";
 import type { RenderResultOptions } from "../extensibility/custom-tools/types";
 import type { Theme } from "../modes/theme/theme";
-import { computeLineHash } from "../patch/hashline";
+import { formatHashLine, formatHashlineTextForDisplay, formatNumberedLine } from "../patch/hashline";
 import grepDescription from "../prompts/tools/grep.md" with { type: "text" };
 import { Ellipsis, Hasher, type RenderCache, renderStatusLine, renderTreeList, truncateToWidth } from "../tui";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
@@ -208,12 +208,9 @@ export class GrepTool implements AgentTool<typeof grepSchema, GrepToolDetails> {
 				const lineWidth = Math.max(...lineNumbers.map(value => value.toString().length));
 
 				const formatLine = (lineNumber: number, line: string, isMatch: boolean): string => {
-					if (useHashLines) {
-						const ref = `${lineNumber}:${computeLineHash(lineNumber, line)}`;
-						return isMatch ? `>>${ref}|${line}` : `  ${ref}|${line}`;
-					}
-					const padded = lineNumber.toString().padStart(lineWidth, " ");
-					return isMatch ? `>>${padded}|${line}` : `  ${padded}|${line}`;
+					const marker = isMatch ? ">>" : "  ";
+					if (useHashLines) return `${marker}${formatHashLine(lineNumber, line)}`;
+					return `${marker}${formatNumberedLine(lineNumber, line, lineWidth)}`;
 				};
 
 				// Add context before
@@ -338,7 +335,8 @@ export const grepToolRenderer = {
 		const hasDetailedData = details?.matchCount !== undefined || details?.fileCount !== undefined;
 
 		if (!hasDetailedData) {
-			const textContent = result.content?.find(c => c.type === "text")?.text;
+			const rawTextContent = result.content?.find(c => c.type === "text")?.text;
+			const textContent = rawTextContent ? formatHashlineTextForDisplay(rawTextContent) : rawTextContent;
 			if (!textContent || textContent === "No matches found") {
 				return new Text(formatEmptyMessage("No matches found", uiTheme), 0, 0);
 			}
@@ -400,7 +398,8 @@ export const grepToolRenderer = {
 			uiTheme,
 		);
 
-		const textContent = result.content?.find(c => c.type === "text")?.text ?? "";
+		const rawTextContent = result.content?.find(c => c.type === "text")?.text ?? "";
+		const textContent = formatHashlineTextForDisplay(rawTextContent);
 		const rawLines = textContent.split("\n");
 		const hasSeparators = rawLines.some(line => line.trim().length === 0);
 		const matchGroups: string[][] = [];

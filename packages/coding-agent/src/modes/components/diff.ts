@@ -110,12 +110,9 @@ export function renderDiff(diffText: string, _options: RenderDiffOptions = {}): 
 	const lines = diffText.split("\n");
 	const result: string[] = [];
 
-	const formatLine = (prefix: string, lineNum: string, content: string): string => {
-		if (lineNum.trim().length === 0) {
-			return `${prefix}${content}`;
-		}
-		return `${prefix}${lineNum}|${content}`;
-	};
+	/** Format a diff line: `prefix + lineNum|content` or `prefix + content` when no line number. */
+	const fmt = (prefix: string, lineNum: string, content: string): string =>
+		lineNum ? `${prefix}${lineNum}|${content}` : `${prefix}${content}`;
 
 	let i = 0;
 	while (i < lines.length) {
@@ -158,26 +155,24 @@ export function renderDiff(diffText: string, _options: RenderDiffOptions = {}): 
 					replaceTabs(added.content),
 				);
 
-				result.push(theme.fg("toolDiffRemoved", formatLine("-", removed.lineNum, visualizeIndent(removedLine))));
-				result.push(theme.fg("toolDiffAdded", formatLine("+", added.lineNum, visualizeIndent(addedLine))));
+				result.push(theme.fg("toolDiffRemoved", fmt("-", removed.lineNum, visualizeIndent(removedLine))));
+				result.push(theme.fg("toolDiffAdded", fmt("+", added.lineNum, visualizeIndent(addedLine))));
 			} else {
 				// Show all removed lines first, then all added lines
 				for (const removed of removedLines) {
-					result.push(
-						theme.fg("toolDiffRemoved", formatLine("-", removed.lineNum, visualizeIndent(removed.content))),
-					);
+					result.push(theme.fg("toolDiffRemoved", fmt("-", removed.lineNum, visualizeIndent(removed.content))));
 				}
 				for (const added of addedLines) {
-					result.push(theme.fg("toolDiffAdded", formatLine("+", added.lineNum, visualizeIndent(added.content))));
+					result.push(theme.fg("toolDiffAdded", fmt("+", added.lineNum, visualizeIndent(added.content))));
 				}
 			}
 		} else if (parsed.prefix === "+") {
 			// Standalone added line
-			result.push(theme.fg("toolDiffAdded", formatLine("+", parsed.lineNum, visualizeIndent(parsed.content))));
+			result.push(theme.fg("toolDiffAdded", fmt("+", parsed.lineNum, visualizeIndent(parsed.content))));
 			i++;
 		} else {
 			// Context line
-			result.push(theme.fg("toolDiffContext", formatLine(" ", parsed.lineNum, visualizeIndent(parsed.content))));
+			result.push(theme.fg("toolDiffContext", fmt(" ", parsed.lineNum, visualizeIndent(parsed.content))));
 			i++;
 		}
 	}

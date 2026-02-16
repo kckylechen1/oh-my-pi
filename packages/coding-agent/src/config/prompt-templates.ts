@@ -231,12 +231,12 @@ handlebars.registerHelper("jsonStringify", (value: unknown): string => JSON.stri
 
 /**
  * {{hashline lineNum "content"}} — compute a real hashline ref for prompt examples.
- * Returns `"lineNum:hash"` using the actual hash algorithm.
+ * Returns `"lineNum" + CJK hash char` using the actual hash algorithm.
  */
 handlebars.registerHelper("hashline", (lineNum: unknown, content: unknown): string => {
 	const num = typeof lineNum === "number" ? lineNum : Number.parseInt(String(lineNum), 10);
 	const str = typeof content === "string" ? content : String(content ?? "");
-	return `${num}:${computeLineHash(num, str)}`;
+	return `${num}${computeLineHash(num, str)}`;
 });
 
 export function renderPromptTemplate(template: string, context: TemplateContext = {}): string {

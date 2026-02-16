@@ -34,7 +34,7 @@ import { enforcePlanModeWrite, resolvePlanPath } from "../tools/plan-mode-guard"
 import { applyPatch } from "./applicator";
 import { generateDiffString, generateUnifiedDiffString, replaceText } from "./diff";
 import { findMatch } from "./fuzzy";
-import { applyHashlineEdits, computeLineHash, parseLineRef } from "./hashline";
+import { applyHashlineEdits, formatHashLine, parseLineRef } from "./hashline";
 import { detectLineEnding, normalizeToLF, restoreLineEndings, stripBom } from "./normalize";
 import { buildNormativeUpdateInput } from "./normative";
 import { type EditToolDetails, getLspBatchRequest } from "./shared";
@@ -64,7 +64,11 @@ export { DEFAULT_FUZZY_THRESHOLD, findContextLine, findMatch as findEditMatch, f
 export {
 	applyHashlineEdits,
 	computeLineHash,
+	formatHashLine,
 	formatHashLines,
+	formatHashlineTextForDisplay,
+	formatNumberedLine,
+	formatNumberedLines,
 	HashlineMismatchError,
 	parseLineRef,
 	streamHashLinesFromLines,
@@ -132,7 +136,7 @@ export type PatchParams = Static<typeof patchEditSchema>;
 const hashlineSingleSchema = Type.Object(
 	{
 		set_line: Type.Object({
-			anchor: Type.String({ description: 'Line reference "LINE:HASH"' }),
+			anchor: Type.String({ description: 'Line reference — line number + CJK hash char (e.g. "42\u4e10")' }),
 			new_text: Type.String({ description: 'Replacement content (\\n-separated) — "" for delete' }),
 		}),
 	},
@@ -142,8 +146,8 @@ const hashlineSingleSchema = Type.Object(
 const hashlineRangeSchema = Type.Object(
 	{
 		replace_lines: Type.Object({
-			start_anchor: Type.String({ description: 'Start line ref "LINE:HASH"' }),
-			end_anchor: Type.String({ description: 'End line ref "LINE:HASH"' }),
+			start_anchor: Type.String({ description: "Start line ref — line number + CJK hash char" }),
+			end_anchor: Type.String({ description: "End line ref — line number + CJK hash char" }),
 			new_text: Type.String({ description: 'Replacement content (\\n-separated) — "" for delete' }),
 		}),
 	},
@@ -152,7 +156,7 @@ const hashlineRangeSchema = Type.Object(
 const hashlineInsertAfterSchema = Type.Object(
 	{
 		insert_after: Type.Object({
-			anchor: Type.String({ description: 'Insert after this line "LINE:HASH"' }),
+			anchor: Type.String({ description: "Insert after this line — line number + CJK hash char" }),
 			text: Type.String({ description: "Content to insert (\\n-separated); must be non-empty" }),
 		}),
 	},
@@ -517,8 +521,7 @@ export class EditTool implements AgentTool<TInput> {
 								const parsed = parseLineRef(ref);
 								if (parsed.line >= 1 && parsed.line <= lines.length) {
 									const lineContent = lines[parsed.line - 1];
-									const hash = computeLineHash(parsed.line, lineContent);
-									targetLines.push(`${parsed.line}:${hash}|${lineContent}`);
+									targetLines.push(formatHashLine(parsed.line, lineContent));
 								}
 							} catch {
 								/* skip malformed refs */

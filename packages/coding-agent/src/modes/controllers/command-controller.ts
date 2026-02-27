@@ -857,7 +857,7 @@ function formatNumber(value: number, maxFractionDigits = 1): string {
 }
 
 function formatUsedAccounts(value: number): string {
-	return `${value.toFixed(2)} used`;
+	return `${formatNumber(value * 100)}% used`;
 }
 
 function resolveProviderAuthMode(authStorage: AuthStorage, provider: string): string {
@@ -1043,7 +1043,8 @@ function renderUsageBar(limit: UsageLimit, uiTheme: typeof theme): string {
 		return uiTheme.fg("dim", `[${"·".repeat(BAR_WIDTH)}]`);
 	}
 	const clamped = Math.min(Math.max(fraction, 0), 1);
-	const filled = Math.round(clamped * BAR_WIDTH);
+	const remaining = 1 - clamped;
+	const filled = Math.round(remaining * BAR_WIDTH);
 	const filledBar = "█".repeat(filled);
 	const emptyBar = "░".repeat(Math.max(0, BAR_WIDTH - filled));
 	const color = resolveStatusColor(limit.status);
